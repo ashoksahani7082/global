@@ -36,6 +36,10 @@ export default async function handler(req, res) {
       content: clean(body.content),
       term: clean(body.term),
       landing_referrer: clean(body.landing_referrer, 120),
+      landing_url: clean(body.landing_url, 1000),
+      fbp: clean(body.fbp, 200),
+      fbc: clean(body.fbc, 200),
+      user_agent: clean(body.user_agent, 500),
       created_at: new Date().toISOString()
     };
 
