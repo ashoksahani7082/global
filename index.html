@@ -236,7 +236,11 @@
                         medium: params.get('utm_medium'),
                         content: params.get('utm_content'),
                         term: params.get('utm_term'),
-                        landing_referrer: referrerHost
+                        landing_referrer: referrerHost,
+                        landing_url: window.location.href,
+                        fbp: document.cookie.match(/(?:^|; )_fbp=([^;]+)/)?.[1] || null,
+                        fbc: document.cookie.match(/(?:^|; )_fbc=([^;]+)/)?.[1] || null,
+                        user_agent: navigator.userAgent
                     })
                 });
 
