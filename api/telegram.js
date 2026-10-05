@@ -24,6 +24,61 @@ async function redisCommand(command) {
   return data.result;
 }
 
+async function sendMetaSubscribe(attribution, eventTime, eventId) {
+  const accessToken = process.env.META_CAPI_ACCESS_TOKEN;
+  const pixelId = process.env.META_PIXEL_ID || "1351302446502434";
+  const apiVersion = process.env.META_GRAPH_API_VERSION || "v24.0";
+  const testEventCode = process.env.META_TEST_EVENT_CODE;
+
+  if (!accessToken) {
+    throw new Error("META_CAPI_ACCESS_TOKEN is not configured");
+  }
+
+  const userData = {};
+  if (attribution?.fbp) userData.fbp = attribution.fbp;
+  if (attribution?.fbc) userData.fbc = attribution.fbc;
+
+  // A pseudonymous click identifier can be used as an external ID after hashing.
+  if (attribution?.click_id) {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(attribution.click_id)
+    );
+    userData.external_id = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  const event = {
+    event_name: "Subscribe",
+    event_time: eventTime,
+    event_id: eventId,
+    action_source: "website",
+    event_source_url: attribution?.landing_url || "https://global-rust.vercel.app/",
+    user_data: userData
+  };
+
+  const payload = { data: [event] };
+  if (testEventCode) payload.test_event_code = testEventCode;
+
+  const response = await fetch(
+    `https://graph.facebook.com/${apiVersion}/${pixelId}/events?access_token=${encodeURIComponent(accessToken)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.error) {
+    throw new Error(data.error?.message || "Meta CAPI request failed");
+  }
+
+  return data;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "Method not allowed" });
@@ -62,7 +117,9 @@ export default async function handler(req, res) {
         medium: attribution?.medium || null,
         content: attribution?.content || null,
         term: attribution?.term || null,
-        click_id: attribution?.click_id || null
+        click_id: attribution?.click_id || null,
+        fbp: attribution?.fbp || null,
+        fbc: attribution?.fbc || null
       };
 
       const recordId = `${Date.now()}_${request.from?.id || "unknown"}`;
@@ -74,6 +131,23 @@ export default async function handler(req, res) {
         "EX",
         60 * 60 * 24 * 90
       ]);
+
+      if (attribution?.click_id) {
+        const eventId = `subscriber_${attribution.click_id}`;
+        try {
+          await sendMetaSubscribe(
+            attribution,
+            request.date || Math.floor(Date.now() / 1000),
+            eventId
+          );
+          console.log("Meta CAPI Subscribe sent", {
+            event_id: eventId,
+            click_id: attribution.click_id
+          });
+        } catch (metaError) {
+          console.error("Meta CAPI Subscribe failed:", metaError.message);
+        }
+      }
 
       console.log("Telegram join request saved", {
         user_id: subscriber.telegram_user_id,
